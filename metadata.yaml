@@ -1,5 +1,5 @@
 homepage: "https://wireboard.io"
 documentation: "https://wireboard.io/docs"
 versions:
-  - sha: REPLACE_WITH_FIRST_COMMIT_SHA
+  - sha: e98f49c2c99b57103f4d9322fa2c041181617989
     changeNotes: Initial release
