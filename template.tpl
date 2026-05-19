@@ -13,7 +13,7 @@ ___INFO___
   "id": "cvt_temp_public_id",
   "version": 1,
   "securityGroups": [],
-  "displayName": "WireBoard",
+  "displayName": "WireBoard Analytics",
   "categories": [
     "ANALYTICS"
   ],
@@ -110,7 +110,7 @@ ___TEMPLATE_PARAMETERS___
   {
     "type": "RADIO",
     "name": "cookieMode",
-    "displayName": "Tracking Mode",
+    "displayName": "Tracking mode",
     "radioItems": [
       {
         "value": "cookie",
