@@ -1,5 +1,7 @@
 homepage: "https://wireboard.io"
 documentation: "https://wireboard.io/docs"
 versions:
+  - sha: 0d79a1684689131e2ed66547f15b295f7f0ef04b
+    changeNotes: Initial gallery release. Init + Custom Event modes, GA4 dataLayer auto-capture, cookie/cookieless tracking.
   - sha: e98f49c2c99b57103f4d9322fa2c041181617989
     changeNotes: Initial release
