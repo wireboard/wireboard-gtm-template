@@ -119,10 +119,15 @@ ___TEMPLATE_PARAMETERS___
       {
         "value": "cookieless",
         "displayValue": "Cookieless"
+      },
+      {
+        "value": "consent",
+        "displayValue": "Consent Mode (cookieless until analytics_storage is granted)"
       }
     ],
     "simpleValueType": true,
     "defaultValue": "cookie",
+    "help": "Consent Mode reads Google Consent Mode's analytics_storage when the tag fires: with consent the tracker uses cookies (returning visitors keep their ID), without it the tracker is cookieless, and it switches to cookies once if the visitor accepts during the page. Your consent tool must feed Google Consent Mode. Do not also require consent on this tag in Advanced Settings.",
     "enablingConditions": [
       {
         "paramName": "type",
@@ -278,11 +283,13 @@ ___TEMPLATE_PARAMETERS___
 ___SANDBOXED_JS_FOR_WEB_TEMPLATE___
 
 // Sandboxed APIs
+const addConsentListener = require('addConsentListener');
 const callInWindow = require('callInWindow');
 const copyFromWindow = require('copyFromWindow');
 const createArgumentsQueue = require('createArgumentsQueue');
 const createQueue = require('createQueue');
 const injectScript = require('injectScript');
+const isConsentGranted = require('isConsentGranted');
 const log = require('logToConsole');
 const makeNumber = require('makeNumber');
 
@@ -350,7 +357,11 @@ const trackerOpts = {
   forceSecureTracker: true,
   contexts: { performanceTiming: true }
 };
-if (data.cookieMode === 'cookieless') {
+// Consent Mode: decide the storage from analytics_storage as the tag fires,
+// so a visitor who consented earlier starts with cookies and keeps their ID.
+const consentMode = data.cookieMode === 'consent';
+const storageGranted = consentMode && isConsentGranted('analytics_storage');
+if (data.cookieMode === 'cookieless' || (consentMode && !storageGranted)) {
   trackerOpts.useCookies = false;
   trackerOpts.useLocalStorage = false;
 }
@@ -368,6 +379,19 @@ const publisherContext = [{
   data: { publisher: data.publisherId }
 }];
 callInWindow('wireboard', 'trackPageView', null, publisherContext);
+
+// Consent Mode, consent not given yet: switch the running tracker to cookies
+// once, when the visitor accepts during this page. On later pages the tag
+// starts with cookies directly (see above), so upgradeStorage is not repeated.
+if (consentMode && !storageGranted) {
+  let upgraded = false;
+  addConsentListener('analytics_storage', (consentType, granted) => {
+    if (granted && !upgraded) {
+      upgraded = true;
+      callInWindow('wireboard', 'upgradeStorage', { useCookies: true, useLocalStorage: true });
+    }
+  });
+}
 
 // Load wireboard.js, then events.min.js, then activate optional features.
 // log() is only used in fail(); successful happy-path doesn't narrate itself.
@@ -694,13 +718,105 @@ ___WEB_PERMISSIONS___
       "isEditedByUser": true
     },
     "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "access_consent",
+        "versionId": "1"
+      },
+      "param": [
+        {
+          "key": "consentTypes",
+          "value": {
+            "type": 2,
+            "listItem": [
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "consentType"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "analytics_storage"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
+    },
+    "isRequired": true
   }
 ]
 
 
 ___TESTS___
 
-scenarios: []
+scenarios:
+- name: Consent Mode without consent starts cookieless and upgrades once on accept
+  code: |-
+    let listener;
+    mock('isConsentGranted', false);
+    mock('addConsentListener', (type, fn) => { listener = fn; });
+    mock('injectScript', (url, onSuccess) => { onSuccess(); });
+    runCode(initData('consent'));
+    assertApi('callInWindow').wasCalledWith('wireboard', 'newTracker', 'wb', 'pipeline-0.collector.wireboard.io', {appId: 'AbCd1234', forceSecureTracker: true, contexts: {performanceTiming: true}, useCookies: false, useLocalStorage: false});
+    assertApi('addConsentListener').wasCalled();
+    assertApi('callInWindow').wasNotCalledWith('wireboard', 'upgradeStorage', {useCookies: true, useLocalStorage: true});
+    listener('analytics_storage', true);
+    listener('analytics_storage', true);
+    assertApi('callInWindow').wasCalledWith('wireboard', 'upgradeStorage', {useCookies: true, useLocalStorage: true});
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Consent Mode with consent already granted starts with cookies
+  code: |-
+    mock('isConsentGranted', true);
+    mock('injectScript', (url, onSuccess) => { onSuccess(); });
+    runCode(initData('consent'));
+    assertApi('callInWindow').wasCalledWith('wireboard', 'newTracker', 'wb', 'pipeline-0.collector.wireboard.io', {appId: 'AbCd1234', forceSecureTracker: true, contexts: {performanceTiming: true}});
+    assertApi('addConsentListener').wasNotCalled();
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Cookieless mode never reads consent
+  code: |-
+    mock('injectScript', (url, onSuccess) => { onSuccess(); });
+    runCode(initData('cookieless'));
+    assertApi('callInWindow').wasCalledWith('wireboard', 'newTracker', 'wb', 'pipeline-0.collector.wireboard.io', {appId: 'AbCd1234', forceSecureTracker: true, contexts: {performanceTiming: true}, useCookies: false, useLocalStorage: false});
+    assertApi('isConsentGranted').wasNotCalled();
+    assertApi('addConsentListener').wasNotCalled();
+setup: |-
+  const initData = (cookieMode) => ({
+    type: 'init',
+    siteId: 'AbCd1234',
+    publisherId: '11111111-2222-4333-8444-555555555555',
+    collectorUrl: '',
+    cookieMode: cookieMode,
+    activityTracking: false,
+    dataLayerCapture: false
+  });
 
 
 ___NOTES___
@@ -723,5 +839,11 @@ Architecture:
   window.wireboardEnableDataLayerListener() directly, exposed by events.min.js.
 - Publisher inheritance for Custom Event tags goes through wireboardSetPublisher,
   set by the Initialization tag. No need to repeat the publisher on every event.
+- Consent Mode (tracking mode "consent"): isConsentGranted('analytics_storage')
+  decides cookie or cookieless storage when the tag fires, and an
+  addConsentListener calls upgradeStorage once if consent arrives during the
+  page. Calling upgradeStorage on every page from a cookieless start would give
+  returning visitors a new ID on each page, which is why the mode is chosen at
+  initialization.
 
 

@@ -35,7 +35,7 @@ Loads WireBoard on every page and starts tracking. Create one tag of this type a
 | Site ID | Yes | Copy from your WireBoard site settings. |
 | Publisher ID | Yes | Copy from your WireBoard site settings. |
 | Collector URL | Yes | Defaults to `pipeline-0.collector.wireboard.io`. Change only if directed by WireBoard support or self-hosting. |
-| Tracking mode | No | `Cookie` (default) or `Cookieless`. |
+| Tracking mode | No | `Cookie` (default), `Cookieless`, or `Consent Mode` (see below). |
 | Auto-capture from dataLayer | No (default ON) | Automatically captures GA4-style events you push to `window.dataLayer`. |
 | Track engagement | No (default ON) | Enables WireBoard's activity heartbeat. |
 
@@ -52,6 +52,18 @@ Fires a single WireBoard custom event when the tag's trigger runs. Use this when
 | Custom properties | No | Key/value table. Up to 30 entries. |
 
 Publisher ID is inherited from the Initialization tag automatically. No need to repeat it on each Custom Event tag.
+
+## Cookie consent
+
+If your site has a consent banner, pick one Tracking mode:
+
+- **Consent Mode** (recommended with a banner): requires a consent tool that feeds Google Consent Mode (Cookiebot, OneTrust, Usercentrics and most others). When the tag fires it reads `analytics_storage`: visitors who already consented are tracked with cookies (and keep their visitor ID from page to page), the others are tracked cookieless, and the tracker switches to cookies once if the visitor accepts during the page. Fire the tag on **Initialization - All Pages** and do not add "Require additional consent" to it: it must fire for everyone to count visitors who decline.
+- **Cookie** with the tag's **Advanced Settings > Consent Settings > Require additional consent for tag to fire** set to `analytics_storage`: nothing is tracked before consent.
+- **Cookieless**: everyone is counted, nothing is stored, no returning-visitor detection.
+
+Do not call `upgradeStorage` yourself on every page with the Cookieless mode: consent tools announce an existing consent again on every page load, and each call from a cookieless start gives the visitor a new ID. Consent Mode handles this for you.
+
+When a visitor withdraws consent, erase WireBoard's cookies and local storage as described in [Withdrawing Consent](https://wireboard.io/docs/cookies#withdrawing-consent), then reload the page.
 
 ## How auto-capture works
 
@@ -71,9 +83,10 @@ Sites that already push GA4-style events to `dataLayer` get full WireBoard cover
 The template declares the following GTM sandbox permissions:
 
 - `injectScript` for `https://static.wireboard.io/wireboard.js` and `https://static.wireboard.io/events.min.js`.
-- `callInWindow` for `wireboard`, `wireboardEvent`, and `wireboardSetPublisher`.
+- `callInWindow` for `wireboard`, `wireboardEvent`, `wireboardSetPublisher` and `wireboardEnableDataLayerListener`.
+- `accessConsent`, read only, for `analytics_storage` (used by the Consent Mode tracking mode).
 
-No access to `dataLayer` is requested from within the template. The dataLayer listener is implemented in WireBoard's `events.min.js` and is activated via the `enableDataLayerListener` command.
+No access to `dataLayer` is requested from within the template. The dataLayer listener is implemented in WireBoard's `events.min.js` and is activated by calling `window.wireboardEnableDataLayerListener()`.
 
 ## Documentation
 
